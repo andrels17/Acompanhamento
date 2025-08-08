@@ -19,11 +19,17 @@ PALETTE_DARK = px.colors.sequential.Plasma_r
 OUTROS_CLASSES = {"Motocicletas", "Mini Carregadeira", "Usina", "Veiculos Leves"}
 
 # Possíveis nomes de colunas para hodômetro e horímetro — atualize se necessário
-HODOMETRO_COLS = ["HODOMETRO", "Hodometro", "Km_Atual", "KM", "Km", "KmAtual", "Km_Atual", "Km_Ultima_Manutencao", "Hod_Hor_Atual"]
-HORIMETRO_COLS = ["HORIMETRO", "Horimetro", "Hr_Atual", "Horas", "Horimetro_Horas", "Horimetros", "Hr_Ultima_Manutencao"]
+HODOMETRO_COLS = [
+    "HODOMETRO", "Hodometro", "Km_Atual", "KM", "Km", "KmAtual", "Km_Atual",
+    "Km_Ultima_Manutencao", "Hod_Hor_Atual", "Hodometro_Atual"
+]
+HORIMETRO_COLS = [
+    "HORIMETRO", "Horimetro", "Hr_Atual", "Horas", "Horimetro_Horas", "Horimetros",
+    "Hr_Ultima_Manutencao", "Hod_Hor_Atual"
+]
 
-# Possíveis colunas de revisão em FROTAS
-REVISION_COLS = ["Rev1", "Rev2", "Rev3", "REV1", "REV2", "REV3", "Ultima_Rev", "Ultima_Revisao", "Km_Ultima_Manutencao"]
+# Colunas de revisões na aba FROTAS (ex.: Rev1, Rev2, Rev3)
+REVISION_COLS = ["Rev1", "Rev2", "Rev3", "Km_Ultima_Manutencao"]
 
 # ---------------- Utilitários ----------------
 def formatar_brasileiro(valor: float) -> str:
@@ -183,12 +189,9 @@ def apply_modern_css(dark: bool):
         .kpi-value {{ font-size:20px; font-weight:700; color: {text_color} }}
         .section-title {{ font-size:18px; font-weight:700; color: {text_color} }}
         .small-muted {{ color: #8a8a8a; font-size:12px; }}
-        .status-badge {{
-            display:inline-block; padding:6px 10px; border-radius:6px; color:#fff; font-weight:600;
-        }}
-        .status-green {{ background:#2ecc71 }}
-        .status-yellow {{ background:#f1c40f; color:#111 }}
-        .status-red {{ background:#e74c3c }}
+        .badge-green {{ background:#28a745; color:white; padding:4px 8px; border-radius:6px; }}
+        .badge-yellow {{ background:#ffc107; color:black; padding:4px 8px; border-radius:6px; }}
+        .badge-red {{ background:#dc3545; color:white; padding:4px 8px; border-radius:6px; }}
         </style>
         """,
         unsafe_allow_html=True
@@ -197,17 +200,12 @@ def apply_modern_css(dark: bool):
 # ---------------- Manutenção: lógica ----------------
 def detect_odometer_and_hourmeter(df_frotas: pd.DataFrame, df_abast: pd.DataFrame):
     """Encontra colunas reais usadas para hodômetro/horímetro e constrói colunas consolidadas."""
-    # dá preferência a coluna Hod_Hor_Atual no BD (caso exista)
-    if "Hod_Hor_Atual" in df_abast.columns:
-        last_km = df_abast.sort_values(["Cod_Equip", "Data"]).groupby("Cod_Equip")["Hod_Hor_Atual"].last().rename("Km_current_from_abast")
-        hr_col = find_first_column(df_frotas, HORIMETRO_COLS)
-        return None, hr_col, last_km
-
     hod_col = find_first_column(df_frotas, HODOMETRO_COLS)
     hr_col = find_first_column(df_frotas, HORIMETRO_COLS)
 
     # Se não achar em frotas, tenta extrair do histórico (abastecimento) usando Km_Hs_Rod as fallback
     if hod_col is None and "Km_Hs_Rod" in df_abast.columns:
+        # pega o último registro por equipamento como estimativa
         last_km = df_abast.sort_values(["Cod_Equip", "Data"]).groupby("Cod_Equip")["Km_Hs_Rod"].last().rename("Km_current_from_abast")
         return None, hr_col, last_km
     return hod_col, hr_col, None
@@ -227,6 +225,7 @@ def build_maintenance_table(df_frotas: pd.DataFrame, last_km_series: pd.Series |
         mf["Km_Current"] = last_km_series.reindex(mf.index)
         mf = mf.reset_index()
     else:
+        # tenta coluna Hodometro_Atual em BD? (não aqui), default NaN
         mf["Km_Current"] = np.nan
 
     if hr_col and hr_col in mf.columns:
@@ -234,8 +233,11 @@ def build_maintenance_table(df_frotas: pd.DataFrame, last_km_series: pd.Series |
     else:
         mf["Hr_Current"] = np.nan
 
-    # Se existir colunas de última manutenção, usa-as
-    if "Km_Ultima_Manutencao" in mf.columns:
+    # Se existir colunas de última manutenção, usa-as (procura por várias alternativas)
+    last_service_col = find_first_column(mf, REVISION_COLS)
+    if last_service_col and last_service_col in mf.columns:
+        mf["Km_Last_Service"] = pd.to_numeric(mf[last_service_col], errors="coerce")
+    elif "Km_Ultima_Manutencao" in mf.columns:
         mf["Km_Last_Service"] = pd.to_numeric(mf["Km_Ultima_Manutencao"], errors="coerce")
     else:
         mf["Km_Last_Service"] = np.nan
@@ -272,87 +274,92 @@ def build_maintenance_table(df_frotas: pd.DataFrame, last_km_series: pd.Series |
 
     return mf
 
-def build_revision_control(df_frotas: pd.DataFrame, last_km_series: pd.Series | None, percent_alert: float,
-                           km_interval_default: int, class_intervals: dict):
+# ---------------- Controle de Revisões (nova funcionalidade) ----------------
+def build_control_revisoes(mf: pd.DataFrame) -> pd.DataFrame:
     """
-    Monta uma tabela de controle de revisões baseada nas colunas Rev1/Rev2/Rev3 (se existirem)
-    e nos hodômetros atuais. Calcula % até a próxima revisão e status colorido.
+    Constrói uma tabela resumida de controle de revisões com status:
+    - Vencido (km_to_service <= 0) -> vermelho
+    - Próximo (km_to_service <= 10% do intervalo) -> amarelo
+    - OK -> verde
+    Calcula percentual consumido desde a última revisão quando possível.
     """
-    mf = df_frotas.copy()
+    cols = ["Cod_Equip", "DESCRICAO_EQUIPAMENTO", "Km_Current", "Km_Last_Service", "Km_Service_Interval", "Km_Next_Service", "Km_To_Service"]
+    present = [c for c in cols if c in mf.columns]
+    ctrl = mf[present].copy()
 
-    # Km atual (prioriza colunas de hodômetro; se não existir, usa last_km_series)
-    hod_col = find_first_column(mf, HODOMETRO_COLS)
-    if hod_col and hod_col in mf.columns:
-        mf["Km_Current"] = pd.to_numeric(mf[hod_col], errors="coerce")
-    elif last_km_series is not None:
-        mf = mf.set_index("Cod_Equip")
-        mf["Km_Current"] = last_km_series.reindex(mf.index)
-        mf = mf.reset_index()
-    else:
-        mf["Km_Current"] = np.nan
+    # Percentual do intervalo já percorrido (se tivermos Km_Last_Service e Km_Service_Interval)
+    def pct_row(r):
+        try:
+            if pd.notna(r.get("Km_Last_Service")) and pd.notna(r.get("Km_Service_Interval")) and pd.notna(r.get("Km_Current")):
+                used = r["Km_Current"] - r["Km_Last_Service"]
+                pct = used / r["Km_Service_Interval"]
+                return max(0.0, min(1.0, pct))
+        except Exception:
+            pass
+        return np.nan
 
-    # last revision: tenta usar colunas REVISION_COLS (pega o máximo entre elas)
-    rev_cols_present = [c for c in REVISION_COLS if c in mf.columns]
-    if rev_cols_present:
-        # converter e pegar a última revisão conhecida (maior valor)
-        for c in rev_cols_present:
-            mf[c] = pd.to_numeric(mf[c], errors="coerce")
-        mf["Km_Last_Rev"] = mf[rev_cols_present].max(axis=1)
-    else:
-        # fallback: utilizar Km_Ultima_Manutencao se existir (já tratado em build_maintenance_table)
-        if "Km_Ultima_Manutencao" in mf.columns:
-            mf["Km_Last_Rev"] = pd.to_numeric(mf["Km_Ultima_Manutencao"], errors="coerce")
-        else:
-            mf["Km_Last_Rev"] = np.nan
+    ctrl["Pct_Used"] = ctrl.apply(pct_row, axis=1)
+    ctrl["Pct_Remaining"] = 1 - ctrl["Pct_Used"]
 
-    # intervalos por classe
-    def get_km_interval(row):
-        cls = row.get("Classe_Operacional", "")
-        if cls in class_intervals and class_intervals[cls].get("km") is not None:
-            return class_intervals[cls].get("km")
-        return km_interval_default
-
-    mf["Km_Interval"] = mf.apply(get_km_interval, axis=1)
-
-    # Próxima revisão em km
-    mf["Km_Next_Rev"] = np.where(
-        mf["Km_Last_Rev"].notna(),
-        mf["Km_Last_Rev"] + mf["Km_Interval"],
-        np.where(mf["Km_Current"].notna(), mf["Km_Current"] + mf["Km_Interval"], np.nan)
-    )
-
-    # calculos de progresso (segurança para NaN)
-    mf["Km_Done_Since_Last"] = mf["Km_Current"] - mf["Km_Last_Rev"]
-    mf["Pct_Used"] = np.where(
-        (mf["Km_Interval"].notna()) & (mf["Km_Done_Since_Last"].notna()),
-        (mf["Km_Done_Since_Last"] / mf["Km_Interval"]) * 100,
-        np.nan
-    )
-    mf["Pct_Used"] = mf["Pct_Used"].clip(lower=0)
-
-    # percent remaining até a revisão
-    mf["Pct_Remaining"] = 100 - mf["Pct_Used"]
-
-    # status com base em percent_alert (ex.: 10% antes -> alerta amarelo)
+    # Status baseado em Km_To_Service
     def status_row(r):
-        pr = r.get("Pct_Remaining", np.nan)
-        if pd.isna(pr):
-            return "Sem Dados"
-        if pr <= 0:
-            return "Atrasado"
-        if pr <= percent_alert:
-            return "Próximo"
-        return "Ok"
+        km_to = r.get("Km_To_Service")
+        interval = r.get("Km_Service_Interval")
+        if pd.isna(km_to):
+            return "Sem Dados", "badge-yellow"
+        try:
+            if km_to <= 0:
+                return "Vencido", "badge-red"
+            # considera 10% do intervalo como próximo
+            if pd.notna(interval) and km_to <= 0.10 * interval:
+                return "Próximo", "badge-yellow"
+            return "OK", "badge-green"
+        except Exception:
+            return "Sem Dados", "badge-yellow"
 
-    mf["Status_Rev"] = mf.apply(status_row, axis=1)
+    st_status = ctrl.apply(lambda r: status_row(r), axis=1)
+    ctrl["Status"] = st_status.apply(lambda t: t[0])
+    ctrl["Status_Badge"] = st_status.apply(lambda t: t[1])
 
-    # retorna colunas úteis
-    cols = [
-        "Cod_Equip", "DESCRICAO_EQUIPAMENTO", "Km_Current", "Km_Last_Rev",
-        "Km_Interval", "Km_Next_Rev", "Pct_Used", "Pct_Remaining", "Status_Rev", "Classe_Operacional"
+    # formata números
+    ctrl["Km_Current_fmt"] = ctrl["Km_Current"].apply(lambda x: int(x) if pd.notna(x) else None)
+    ctrl["Km_Next_Service_fmt"] = ctrl["Km_Next_Service"].apply(lambda x: int(x) if pd.notna(x) else None)
+    ctrl["Km_To_Service_fmt"] = ctrl["Km_To_Service"].apply(lambda x: int(x) if pd.notna(x) else None)
+    ctrl["Pct_Used_fmt"] = ctrl["Pct_Used"].apply(lambda x: f"{x*100:.0f}%" if pd.notna(x) else "–")
+    ctrl["Pct_Remaining_fmt"] = ctrl["Pct_Remaining"].apply(lambda x: f"{x*100:.0f}%" if pd.notna(x) else "–")
+
+    # coluna final de exibição ordenada
+    display_cols = [
+        "Cod_Equip", "DESCRICAO_EQUIPAMENTO", "Km_Current_fmt", "Km_Last_Service",
+        "Km_Next_Service_fmt", "Km_To_Service_fmt", "Pct_Used_fmt", "Pct_Remaining_fmt",
+        "Status", "Status_Badge"
     ]
-    available = [c for c in cols if c in mf.columns]
-    return mf[available].copy()
+    # garante existência
+    display_cols = [c for c in display_cols if c in ctrl.columns]
+    return ctrl.reset_index(drop=True)
+
+def export_control_revisoes_to_excel(path: str, df_ctrl: pd.DataFrame):
+    """Exporta (cria/atualiza) aba Controle_Revisoes no arquivo Excel."""
+    sheets = read_all_sheets(path)
+    if sheets is None:
+        sheets = {}
+    # converter para formato amigável
+    # remover colunas extras de formatação antes de exportar
+    out = df_ctrl.copy()
+    # renomear colunas para algo consistente
+    rename_map = {
+        "Km_Current_fmt": "Km_Current",
+        "Km_Next_Service_fmt": "Km_Next_Service",
+        "Km_To_Service_fmt": "Km_To_Service",
+        "Pct_Used_fmt": "Pct_Used",
+        "Pct_Remaining_fmt": "Pct_Remaining"
+    }
+    out.rename(columns=rename_map, inplace=True)
+    # manter somente colunas úteis
+    keep_cols = [c for c in out.columns if c not in ("Status_Badge", "Pct_Used", "Pct_Remaining")]
+    out_to_save = out[keep_cols]
+    sheets["Controle_Revisoes"] = out_to_save
+    save_all_sheets(path, sheets)
 
 # ---------------- Excel I/O: salvar log e atualizar planilha ----------------
 def read_all_sheets(path: str) -> dict:
@@ -414,6 +421,7 @@ def append_manut_log(path: str, action: dict):
     if target_sheet:
         df_target = sheets[target_sheet].copy()
         # ajustar nomes de colunas: se já houver 'Cod_Equip' manter, caso diferente tentar mapear
+        # Supondo que a aba FROTAS já tem coluna Cod_Equip
         if "Cod_Equip" not in df_target.columns and "COD_EQUIPAMENTO" in df_target.columns:
             df_target = df_target.rename(columns={"COD_EQUIPAMENTO": "Cod_Equip"})
         # localiza linha por Cod_Equip
@@ -489,9 +497,10 @@ def main():
         hr_due_threshold = st.number_input("Alerta para lubrificação se faltar <= (horas)", min_value=1, max_value=500, value=20, step=1)
 
         st.markdown("---")
-        st.header("⚠️ Config. Revisões")
-        percent_alert = st.number_input("Alertar quando faltar <= (%) da revisão", min_value=1.0, max_value=50.0, value=10.0, step=1.0, help="Ex.: 10% significa alerta quando faltar 10% do intervalo até a revisão.")
-        st.caption("A aba '🔧 Controle Revisões' mostrará o plano e permitirá exportar para Excel.")
+        # novo: ativar o painel de controle de revisões (aparece na aba Manutenção)
+        control_revisoes_sidebar = st.checkbox("🔧 Controle de Revisões (sidebar)", value=False)
+        if control_revisoes_sidebar:
+            st.info("Painel de Controle de Revisões habilitado (veja aba Manutenção).")
 
     # Aplica CSS leve
     apply_modern_css(dark_mode)
@@ -531,14 +540,13 @@ def main():
     opts = sidebar_filters_local(df)
     df_f = filtrar_dados(df, opts)
 
-    # Abas (adicionada aba específica para Controle Revisões)
-    tab_principal, tab_consulta, tab_tabela, tab_config, tab_manut, tab_revisoes = st.tabs([
+    # Abas
+    tab_principal, tab_consulta, tab_tabela, tab_config, tab_manut = st.tabs([
         "📊 Análise de Consumo",
         "🔎 Consulta de Frota",
         "📋 Tabela Detalhada",
         "⚙️ Configurações",
-        "🛠️ Manutenção",
-        "🔧 Controle Revisões"
+        "🛠️ Manutenção"
     ])
 
     # ----- Aba Principal -----
@@ -773,7 +781,7 @@ def main():
         if hod_col:
             st.markdown(f"**Hodômetro encontrado em frotas:** `{hod_col}`")
         elif last_km_series is not None:
-            st.markdown("**Hodômetro:** não encontrado diretamente nas colunas de frotas; usando histórico como fallback (Km_Hs_Rod ou Hod_Hor_Atual).")
+            st.markdown("**Hodômetro:** não encontrado diretamente nas colunas de frotas; usando histórico como fallback (Km_Hs_Rod).")
         else:
             st.markdown("**Hodômetro:** não encontrado.")
 
@@ -867,74 +875,66 @@ def main():
         csv_over = mf[available_over].to_csv(index=False).encode("utf-8")
         st.download_button("⬇️ Exportar CSV - Plano de Manutenção (Visão Geral)", csv_over, "manutencao_overview.csv", "text/csv")
 
-    # ----- Aba Controle Revisões (separada) -----
-    with tab_revisoes:
-        st.header("🔧 Controle Revisões (Separado)")
-        st.markdown("Visão consolidada de revisões com progresso (%) até a próxima revisão. Use o botão para exportar para a planilha (`Controle_Revisoes`).")
+        # ---- Painel Controle de Revisões (quando habilitado pelo sidebar) ----
+        if control_revisoes_sidebar:
+            st.markdown("---")
+            st.header("📋 Controle de Revisões")
+            st.markdown("Resumo do plano de revisões com status colorido e percentual do intervalo consumido.")
 
-        # recalcula last km fallback se necessário
-        hod_col, _, last_km_series2 = detect_odometer_and_hourmeter(df_frotas, df)
+            df_ctrl = build_control_revisoes(mf)
 
-        class_intervals = {}
-        if "thr" in st.session_state:
-            for cls, v in st.session_state.thr.items():
-                class_intervals[cls] = {"km": v.get("km_interval", None), "hr": v.get("hr_interval", None)}
+            # mostra tabela com badges coloridos (usando HTML)
+            if not df_ctrl.empty:
+                # Render simples: mostrar tabela sem a coluna de badge, e uma coluna HTML com badge
+                df_show = df_ctrl.copy()
+                # remove colunas internas antes de mostrar
+                if "Status_Badge" in df_show.columns:
+                    df_show["Status_HTML"] = df_show.apply(lambda r: f'<span class="{r["Status_Badge"]}">{r["Status"]}</span>', axis=1)
+                # colunas para exibição
+                cols_to_show = [c for c in ["Cod_Equip", "DESCRICAO_EQUIPAMENTO", "Km_Current_fmt", "Km_Last_Service",
+                                            "Km_Next_Service_fmt", "Km_To_Service_fmt", "Pct_Used_fmt", "Pct_Remaining_fmt", "Status_HTML"]
+                                if c in df_show.columns]
+                # exibe como markdown + dataframe sem status_html (para manter order)
+                st.write("Legenda de status: ")
+                st.markdown('<span class="badge-green">OK</span>   <span class="badge-yellow">Próximo</span>   <span class="badge-red">Vencido</span>', unsafe_allow_html=True)
 
-        rev_ctrl = build_revision_control(df_frotas, last_km_series2, float(percent_alert), int(km_interval_default), class_intervals)
+                # exibir data frame básico:
+                # construo uma tabela com HTML para incluir o badge na última coluna
+                html = '<table style="width:100%; border-collapse: collapse;">'
+                # header
+                html += "<tr>"
+                header_names = {
+                    "Cod_Equip": "Código", "DESCRICAO_EQUIPAMENTO": "Descrição", "Km_Current_fmt": "Km Atual",
+                    "Km_Last_Service": "Km Últ. Manut.", "Km_Next_Service_fmt": "Km Próx. Revisão",
+                    "Km_To_Service_fmt": "Km p/ Revisão", "Pct_Used_fmt": "% Usado", "Pct_Remaining_fmt": "% Restante",
+                    "Status_HTML": "Status"
+                }
+                for c in cols_to_show:
+                    html += f'<th style="text-align:left; padding:6px 8px; border-bottom:1px solid #ddd;">{header_names.get(c,c)}</th>'
+                html += "</tr>"
 
-        # prepare display with colored status
-        def colored_status_tag(s):
-            if s == "Ok":
-                return f'<span class="status-badge status-green">OK</span>'
-            if s == "Próximo":
-                return f'<span class="status-badge status-yellow">PRÓXIMO</span>'
-            if s == "Atrasado":
-                return f'<span class="status-badge status-red">ATRASADO</span>'
-            return f'<span class="status-badge" style="background:#95a5a6">SEM DADOS</span>'
+                # rows
+                for _, r in df_show.iterrows():
+                    html += "<tr>"
+                    for c in cols_to_show:
+                        val = r.get(c, "")
+                        if c == "Status_HTML":
+                            html += f'<td style="padding:6px 8px;">{val}</td>'
+                        else:
+                            html += f'<td style="padding:6px 8px;">{"" if pd.isna(val) else val}</td>'
+                    html += "</tr>"
+                html += "</table>"
+                st.markdown(html, unsafe_allow_html=True)
 
-        if rev_ctrl.empty:
-            st.info("Nenhuma informação de revisão disponível (colunas Rev1/Rev2/Rev3 ou Km_Ultima_Manutencao não encontradas).")
-        else:
-            df_show = rev_ctrl.copy()
-            # formatting pct
-            if "Pct_Used" in df_show.columns:
-                df_show["Pct_Used"] = df_show["Pct_Used"].round(1)
-            if "Pct_Remaining" in df_show.columns:
-                df_show["Pct_Remaining"] = df_show["Pct_Remaining"].round(1)
-
-            # render tabela com tags
-            # cria coluna html de status
-            df_show["Status_Tag"] = df_show["Status_Rev"].apply(lambda s: colored_status_tag(s))
-            # exibimos tabela base
-            st.dataframe(df_show.drop(columns=["Status_Tag"]) if "Status_Tag" in df_show.columns else df_show, use_container_width=True)
-
-            # mostra badges por linha (mais visual)
-            st.markdown("**Resumo visual (por equipamento)**")
-            for _, r in df_show.sort_values("Pct_Remaining", na_position="last").iterrows():
-                cod = int(r["Cod_Equip"]) if not pd.isna(r.get("Cod_Equip")) else "-"
-                desc = r.get("DESCRICAO_EQUIPAMENTO", "")
-                status_html = r.get("Status_Tag", "")
-                pct_rem = r.get("Pct_Remaining", np.nan)
-                pct_txt = f"{pct_rem:.1f}%" if pd.notna(pct_rem) else "–"
-                st.markdown(f"**{cod} — {desc}** — Faltam: **{pct_txt}** — {status_html}", unsafe_allow_html=True)
-
-            # exportar para Excel (aba Controle_Revisoes)
-            if st.button("📤 Exportar Controle_Revisoes para Excel"):
-                try:
-                    sheets = read_all_sheets(EXCEL_PATH)
-                    if sheets is None:
-                        sheets = {}
-                    # salva DataFrame sem colunas de exibição HTML
-                    to_save = df_show.drop(columns=["Status_Tag"]) if "Status_Tag" in df_show.columns else df_show
-                    sheets["Controle_Revisoes"] = to_save.reset_index(drop=True)
-                    save_all_sheets(EXCEL_PATH, sheets)
-                    st.success("Planilha atualizada: aba 'Controle_Revisoes' criada/atualizada com sucesso.")
-                except Exception as e:
-                    st.error(f"Falha ao exportar Controle_Revisoes: {e}")
-
-            # também possibilitar download CSV
-            csv_rev = df_show.drop(columns=["Status_Tag"], errors="ignore").to_csv(index=False).encode("utf-8")
-            st.download_button("⬇️ Exportar CSV - Controle Revisões", csv_rev, "controle_revisoes.csv", "text/csv")
+                # botão exportar para Excel (aba Controle_Revisoes)
+                if st.button("⬇️ Exportar Controle_Revisoes para Excel"):
+                    try:
+                        export_control_revisoes_to_excel(EXCEL_PATH, df_ctrl)
+                        st.success("Aba 'Controle_Revisoes' atualizada/criada no Excel.")
+                    except Exception as e:
+                        st.error(f"Falha ao exportar Controle_Revisoes: {e}")
+            else:
+                st.info("Sem dados para Controle de Revisões no momento.")
 
 if __name__ == "__main__":
     main()
