@@ -1,0 +1,10 @@
+streamlit
+streamlit-aggrid
+pandas
+openpyxl
+plotly
+unidecode
+matplotlib
+kaleido==0.2.1
+numpy
+streamlit-plotly-events
