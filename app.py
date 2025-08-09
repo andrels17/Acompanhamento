@@ -90,7 +90,6 @@ def detect_equipment_type(df_abast: pd.DataFrame) -> pd.DataFrame:
     
     return df
 
-# Leitura segura do Excel (usa pandas). Cache para performance
 @st.cache_data(show_spinner="Carregando e processando dados...")
 def load_data(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Carrega e prepara os DataFrames."""
@@ -104,10 +103,12 @@ def load_data(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
         st.error(f"Erro ao carregar o Excel: {e}")
         st.stop()
 
+    # Normaliza frotas
     df_frotas = df_frotas.rename(columns={"COD_EQUIPAMENTO": "Cod_Equip"}).drop_duplicates(subset=["Cod_Equip"])
     df_frotas["ANOMODELO"] = pd.to_numeric(df_frotas.get("ANOMODELO"), errors="coerce")
     df_frotas["label"] = df_frotas["Cod_Equip"].astype(str) + " - " + df_frotas.get("DESCRICAO_EQUIPAMENTO", "").fillna("") + " (" + df_frotas.get("PLACA", "").fillna("Sem Placa") + ")"
     
+    # Lista de 21 colunas para corresponder à sua planilha
     expected_cols = [
         "Data", "Cod_Equip", "Descricao_Equip", "Qtde_Litros", "Km_Hs_Rod", "Media", "Media_P", 
         "Perc_Media", "Ton_Cana", "Litros_Ton", "Ref1", "Ref2", "Unidade", "Safra", "Mes", "Semana",
@@ -117,7 +118,7 @@ def load_data(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     if len(df_abast.columns) < len(expected_cols):
         st.error(f"A planilha 'BD' tem menos colunas ({len(df_abast.columns)}) do que o esperado ({len(expected_cols)}). Verifique o arquivo Excel.")
         st.stop()
-
+        
     df_abast = df_abast.iloc[:, :len(expected_cols)]
     df_abast.columns = expected_cols
 
@@ -126,12 +127,14 @@ def load_data(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     df["Data"] = pd.to_datetime(df["Data"], errors="coerce")
     df.dropna(subset=["Data"], inplace=True)
 
+    # --- GARANTE A CRIAÇÃO DAS COLUNAS DE TEMPO ---
     df["Ano"] = df["Data"].dt.year
-    
-    # --- CORREÇÃO PARA LER NÚMEROS COM VÍRGULA E PONTO ---
+    df["Mes"] = df["Data"].dt.month # Garante que a coluna Mes seja criada a partir da Data
+    df["AnoMes"] = df["Data"].dt.to_period("M").astype(str) # Garante que a coluna AnoMes exista
+
+    # Conversão de números com vírgula e ponto
     for col in ["Qtde_Litros", "Media", "Km_Hs_Rod", "Hod_Hor_Atual"]:
         if col in df.columns:
-            # Converte para string, remove o ponto de milhar, e troca a vírgula do decimal por ponto
             df[col] = df[col].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False)
             df[col] = pd.to_numeric(df[col], errors='coerce')
     
@@ -139,6 +142,7 @@ def load_data(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
         df["Media"] = np.where(df["Qtde_Litros"] > 0, df["Km_Hs_Rod"] / df["Qtde_Litros"], np.nan)
 
     return df, df_frotas
+
 @st.cache_data
 def filtrar_dados(df: pd.DataFrame, opts: dict) -> pd.DataFrame:
     """Filtra o DataFrame conforme opções selecionadas (sem filtro de marca)."""
