@@ -699,12 +699,12 @@ def main():
                 safra_ult = None
                 total_ult_safra = None
                 media_ult_safra = None
-
+            
             c1, c2, c3, c4 = st.columns(4)
-                c1.metric("Status", dados_eq.get("ATIVO", "–"))
-                c2.metric("Placa", dados_eq.get("PLACA", "–"))
-                c3.metric("Tipo de Controle", tipo_controle)
-                c4.metric("Leitura Atual (Hod./Hor.)", valor_atual_display)
+            c1.metric("Status", dados_eq.get("ATIVO", "–"))
+            c2.metric("Placa", dados_eq.get("PLACA", "–"))
+            c3.metric("Tipo de Controle", tipo_controle)
+            c4.metric("Leitura Atual (Hod./Hor.)", valor_atual_display)
 
 
             st.markdown("---")
