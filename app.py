@@ -68,22 +68,34 @@ def detect_equipment_type(df_abast: pd.DataFrame) -> pd.DataFrame:
     })
     
     # Para equipamentos sem informação na coluna Unid, tenta inferir pela classe
-    # (você pode ajustar essas regras conforme sua necessidade)
     def inferir_tipo_por_classe(row):
         if pd.notna(row['Tipo_Controle']):
             return row['Tipo_Controle']
         
         classe = str(row.get('Classe_Operacional', '')).upper()
         
-        # Máquinas agrícolas geralmente são por HORAS
-        if any(palavra in classe for palavra in ['TRATOR', 'COLHEITADEIRA', 'PULVERIZADOR', 'PLANTADEIRA']):
-            return 'HORAS'
+        # --- CORREÇÃO APLICADA AQUI ---
+        # Lista de palavras-chave expandida para veículos
+        veiculos_keywords = [
+            'CAMINHÃO', 'CAMINHAO', 'CAMINHÕES', 'VEICULO', 
+            'VEICULOS', 'PICKUP', 'CAVALO MECANICO'
+        ]
         
-        # Veículos geralmente são por QUILÔMETROS  
-        if any(palavra in classe for palavra in ['CAMINHÃO', 'CAMINHAO', 'VEICULO', 'PICKUP']):
+        # Lista de palavras-chave para máquinas
+        maquinas_keywords = [
+            'TRATOR', 'COLHEITADEIRA', 'PULVERIZADOR', 
+            'PLANTADEIRA', 'PÁ CARREGADEIRA', 'RETROESCAVADEIRA'
+        ]
+
+        # Verifica primeiro se é um veículo
+        if any(palavra in classe for palavra in veiculos_keywords):
             return 'QUILÔMETROS'
         
-        # Default para HORAS (máquinas agrícolas são maioria)
+        # Verifica se é uma máquina
+        if any(palavra in classe for palavra in maquinas_keywords):
+            return 'HORAS'
+        
+        # Default para HORAS se nenhuma palavra-chave for encontrada
         return 'HORAS'
     
     df['Tipo_Controle'] = df.apply(inferir_tipo_por_classe, axis=1)
