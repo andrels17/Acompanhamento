@@ -655,13 +655,10 @@ def main():
                                      textposition="top right", marker=dict(size=8, color="#000000"), showlegend=False)
             st.plotly_chart(fig_acum, use_container_width=True, theme=None)
 
-# ----- Aba Consulta de Frota (VERSÃO CORRIGIDA)-----
+    # ----- Aba Consulta de Frota (VERSÃO CORRIGIDA)-----
 with tab_consulta:
     st.header("🔎 Ficha Individual do Equipamento")
-    # Usa um filtro para o selectbox para evitar carregar todos os labels na memória
-    equip_options = df_frotas.sort_values("Cod_Equip")["label"]
-    equip_label = st.selectbox("Selecione o Equipamento", options=equip_options)
-    
+    equip_label = st.selectbox("Selecione o Equipamento", options=df_frotas.sort_values("Cod_Equip")["label"])
     if equip_label:
         cod_sel = int(equip_label.split(" - ")[0])
         dados_eq = df_frotas.query("Cod_Equip == @cod_sel").iloc[0]
@@ -669,55 +666,55 @@ with tab_consulta:
 
         st.subheader(f"{dados_eq.get('DESCRICAO_EQUIPAMENTO','–')} ({dados_eq.get('PLACA','–')})")
         
-        # Pega as informações mais recentes do equipamento a partir do histórico de consumo
+        # Pega as informações mais recentes do equipamento
         if not consumo_eq.empty:
             ultimo_registro = consumo_eq.iloc[0]
             tipo_controle = ultimo_registro.get("Tipo_Controle", "N/A")
             
-            # --- LÓGICA CORRIGIDA PARA BUSCAR O VALOR CERTO ---
+            # --- CORREÇÃO APLICADA AQUI ---
+            # Busca o valor correto da coluna "Hod_Hor_Atual"
             valor_atual_leitura = ultimo_registro.get("Hod_Hor_Atual", np.nan) 
             
             unidade = "h" if tipo_controle == "HORAS" else "km"
-            # Formata o valor para exibição
             valor_atual_display = f"{int(valor_atual_leitura):,} {unidade}".replace(",",".") if pd.notna(valor_atual_leitura) else "–"
             
-            # Cálculos para outros cards
+            # Dados para os outros cards
             media_geral_eq = consumo_eq["Media"].mean()
             total_consumido_eq = consumo_eq["Qtde_Litros"].sum()
+
             safra_ult = consumo_eq["Safra"].max()
             df_safra = consumo_eq[consumo_eq["Safra"] == safra_ult]
             total_ult_safra = df_safra["Qtde_Litros"].sum()
             media_ult_safra = df_safra["Media"].mean()
         else:
-            # Valores padrão caso o equipamento não tenha nenhum registro de consumo
+            # Valores padrão caso não haja histórico de consumo
             tipo_controle = "N/A"
             valor_atual_display = "–"
             media_geral_eq = 0
             total_consumido_eq = 0
-            safra_ult = ""
+            safra_ult = None
             total_ult_safra = 0
             media_ult_safra = 0
 
-        # Exibição dos KPIs em cards (organizado para clareza)
+        # Exibição dos KPIs em cards
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Status", dados_eq.get("ATIVO", "–"))
         col2.metric("Placa", dados_eq.get("PLACA", "–"))
-        col3.metric("Média Geral", formatar_brasileiro(media_geral_eq))
-        col4.metric("Total Consumido (L)", formatar_brasileiro(total_consumido_eq))
+        col3.metric("Média Geral", f"{media_geral_eq:,.2f}".replace(",","X").replace(".",",").replace("X","."))
+        col4.metric("Total Consumido (L)", f"{total_consumido_eq:,.2f}".replace(",","X").replace(".",",").replace("X","."))
 
-        st.markdown("---") 
+        st.markdown("---") # Linha divisória
 
         c5, c6, c7, c8 = st.columns(4)
+        # --- RÓTULO E VALOR CORRIGIDOS ---
         c5.metric("Tipo de Controle", tipo_controle)
-        # --- RÓTULO E VALOR CORRIGIDOS SENDO EXIBIDOS ---
         c6.metric("Leitura Atual (Hod./Hor.)", valor_atual_display)
-        c7.metric(f"Total Última Safra {f'({safra_ult})' if safra_ult else ''}", formatar_brasileiro(total_ult_safra))
-        c8.metric("Média Última Safra", formatar_brasileiro(media_ult_safra))
+        c7.metric(f"Total Última Safra{f' ({safra_ult})' if safra_ult else ''}", f"{total_ult_safra:,.2f}".replace(",","X").replace(".",",").replace("X","."))
+        c8.metric("Média Última Safra", f"{media_ult_safra:,.2f}".replace(",","X").replace(".",",").replace("X","."))
 
         st.markdown("---")
         st.subheader("Informações Cadastrais")
-        st.dataframe(dados_eq.drop("label", errors='ignore').to_frame("Valor"), use_container_width=True)
-    
+        st.dataframe(dados_eq.drop("label").to_frame("Valor"), use_container_width=True)
     # ----- Aba Tabela Detalhada -----
     with tab_tabela:
         st.header("📋 Tabela Detalhada de Abastecimentos")
