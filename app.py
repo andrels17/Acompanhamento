@@ -144,10 +144,13 @@ def load_data(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     df["AnoMes"] = df["Data"].dt.to_period("M").astype(str)
     df["AnoSemana"] = df["Data"].dt.strftime("%Y-%U")
 
-    # Numéricos
-    for col in ["Qtde_Litros", "Media", "Media_P", "Km_Hs_Rod", "Hod_Hor_Atual"]:
+# --- CORREÇÃO PARA LER NÚMEROS COM VÍRGULA ---
+    for col in ["Qtde_Litros", "Media", "Km_Hs_Rod", "Hod_Hor_Atual"]:
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+            # 1. Remove o '.' dos milhares
+            # 2. Troca a ',' do decimal por um '.'
+            df[col] = df[col].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False)
+            df[col] = pd.to_numeric(df[col], errors='coerce')
 
     # Marca / Fazenda (mantém coluna, mas não será usada em filtros)
     df["DESCRICAOMARCA"] = df["Ref2"].astype(str)
