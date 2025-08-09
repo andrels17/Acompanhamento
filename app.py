@@ -266,10 +266,12 @@ def build_maintenance_table_new(df_abast: pd.DataFrame, df_frotas: pd.DataFrame)
     
     # Função para calcular próximos serviços
     def calcular_proximos_servicos(row):
-        tipo_controle = row.get("Tipo_Controle", "HORAS")
+        tipo_controle = row.get("Tipo_Controle") # Não usar default aqui para pegar NaN
         valor_atual = row.get("Hod_Hor_Atual", np.nan)
         
-        if pd.isna(valor_atual) or tipo_controle not in INTERVALOS_TIPO:
+        # --- CORREÇÃO APLICADA AQUI ---
+        # A condição de entrada do IF agora lida com tipo_controle sendo NaN
+        if pd.isna(valor_atual) or pd.isna(tipo_controle) or tipo_controle not in INTERVALOS_TIPO:
             return {
                 "Prox_Lubrificacao": np.nan,
                 "Prox_Revisao": np.nan,
@@ -277,15 +279,15 @@ def build_maintenance_table_new(df_abast: pd.DataFrame, df_frotas: pd.DataFrame)
                 "Para_Revisao": np.nan,
                 "Alert_Lubrificacao": False,
                 "Alert_Revisao": False,
-                "Unidade": tipo_controle.lower()
+                # Verifica se tipo_controle é texto antes de usar .lower()
+                "Unidade": tipo_controle.lower() if isinstance(tipo_controle, str) else ""
             }
         
         # Pega intervalos para este tipo
         intervalos = INTERVALOS_TIPO[tipo_controle]
         alertas = ALERTAS_TIPO[tipo_controle]
         
-        # Calcula próximos valores (assumindo que ainda não teve manutenção)
-        # Em uma implementação mais completa, você poderia ter uma tabela de últimas manutenções
+        # Calcula próximos valores
         prox_lub = ((valor_atual // intervalos["lubrificacao"]) + 1) * intervalos["lubrificacao"]
         prox_rev = ((valor_atual // intervalos["revisao"]) + 1) * intervalos["revisao"]
         
@@ -312,7 +314,7 @@ def build_maintenance_table_new(df_abast: pd.DataFrame, df_frotas: pd.DataFrame)
     
     # Aplica cálculos
     calc_results = mf.apply(calcular_proximos_servicos, axis=1, result_type='expand')
-    mf = pd.concat([mf, calc_results], axis=1)
+    mf = pd.concat([mf.drop(columns=calc_results.columns, errors='ignore'), calc_results], axis=1)
     
     # Flag geral de alerta
     mf["Qualquer_Alerta"] = mf["Alert_Lubrificacao"] | mf["Alert_Revisao"]
