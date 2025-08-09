@@ -773,122 +773,122 @@ def main():
 
     # ----- Aba Manutenção -----
     with tab_manut:
-    st.header("🛠️ Controle Inteligente de Manutenção")
-    st.markdown("Sistema diferenciado por tipo: **Máquinas** controladas por **horas**, **Veículos** por **quilômetros**.")
-
-    # Gera tabela de manutenção
-    mf = build_maintenance_table_new(df, df_frotas)
-
-    # Estatísticas gerais
-    # Filtra para não contar equipamentos sem dados de hodômetro/horímetro
-    mf_valid = mf.dropna(subset=['Hod_Hor_Atual'])
-    total_equipamentos_validos = len(mf_valid)
-    com_alerta_lub = mf_valid["Alert_Lubrificacao"].sum()
-    com_alerta_rev = mf_valid["Alert_Revisao"].sum()
-    qualquer_alerta = mf_valid["Qualquer_Alerta"].sum()
-
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Equipamentos Monitorados", total_equipamentos_validos)
-    col2.metric("Alertas Lubrificação", int(com_alerta_lub))
-    col3.metric("Alertas Revisão", int(com_alerta_rev))
-    col4.metric("Total com Alertas", int(qualquer_alerta))
-
-    # Tabela: equipamentos com manutenção próxima ou vencida
-    df_due = mf[mf["Qualquer_Alerta"]].copy().sort_values(["Para_Revisao", "Para_Lubrificacao"], ascending=[True, True])
-
-    st.subheader("⚠️ Equipamentos com Manutenção Próxima/Atrasada")
+        st.header("🛠️ Controle Inteligente de Manutenção")
+        st.markdown("Sistema diferenciado por tipo: **Máquinas** controladas por **horas**, **Veículos** por **quilômetros**.")
     
-    if not df_due.empty:
-        # Organiza por tipo de alerta para exibição
-        lub_only = df_due[(df_due["Alert_Lubrificacao"]) & (~df_due["Alert_Revisao"])]
-        rev_only = df_due[(~df_due["Alert_Lubrificacao"]) & (df_due["Alert_Revisao"])]
-        both_alerts = df_due[(df_due["Alert_Lubrificacao"]) & (df_due["Alert_Revisao"])]
-
-        if not both_alerts.empty:
-            st.markdown("##### 🔴 **Crítico: Lubrificação E Revisão**")
-            display_cols = ["Cod_Equip", "DESCRICAO_EQUIPAMENTO", "Hod_Hor_Atual", "Para_Lubrificacao", "Para_Revisao", "Unidade"]
-            st.dataframe(both_alerts[[c for c in display_cols if c in both_alerts.columns]].reset_index(drop=True), use_container_width=True)
-
-        if not rev_only.empty:
-            st.markdown("##### 🟡 **Revisão Próxima**")
-            display_cols = ["Cod_Equip", "DESCRICAO_EQUIPAMENTO", "Hod_Hor_Atual", "Para_Revisao", "Unidade"]
-            st.dataframe(rev_only[[c for c in display_cols if c in rev_only.columns]].reset_index(drop=True), use_container_width=True)
-
-        if not lub_only.empty:
-            st.markdown("##### 🔵 **Lubrificação Próxima**")
-            display_cols = ["Cod_Equip", "DESCRICAO_EQUIPAMENTO", "Hod_Hor_Atual", "Para_Lubrificacao", "Unidade"]
-            st.dataframe(lub_only[[c for c in display_cols if c in lub_only.columns]].reset_index(drop=True), use_container_width=True)
-
-        # export CSV
-        all_display_cols = ["Cod_Equip", "DESCRICAO_EQUIPAMENTO", "Tipo_Controle", "Hod_Hor_Atual", "Para_Lubrificacao", "Para_Revisao", "Alert_Lubrificacao", "Alert_Revisao", "Unidade"]
-        csvm = df_due[[c for c in all_display_cols if c in df_due.columns]].to_csv(index=False).encode("utf-8")
-        st.download_button("⬇️ Exportar CSV - Equipamentos em alerta", csvm, "manutencao_alerta.csv", "text/csv")
-    else:
-        st.success("✅ Nenhum equipamento com alerta de manutenção dentro dos parâmetros configurados!")
-
-    st.markdown("---")
-    st.subheader("✅ Registrar Manutenção Realizada")
+        # Gera tabela de manutenção
+        mf = build_maintenance_table_new(df, df_frotas)
     
-    if not df_due.empty:
-        for _, row in df_due.iterrows():
-            cod = int(row["Cod_Equip"]) if not pd.isna(row["Cod_Equip"]) else None
-            label = f"{int(cod)} - {row.get('DESCRICAO_EQUIPAMENTO','')}" if cod else str(row.get('DESCRICAO_EQUIPAMENTO',''))
-            
-            with st.expander(f"🔧 {label}"):
-                cols = st.columns([2,1,1])
+        # Estatísticas gerais
+        # Filtra para não contar equipamentos sem dados de hodômetro/horímetro
+        mf_valid = mf.dropna(subset=['Hod_Hor_Atual'])
+        total_equipamentos_validos = len(mf_valid)
+        com_alerta_lub = mf_valid["Alert_Lubrificacao"].sum()
+        com_alerta_rev = mf_valid["Alert_Revisao"].sum()
+        qualquer_alerta = mf_valid["Qualquer_Alerta"].sum()
+    
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Equipamentos Monitorados", total_equipamentos_validos)
+        col2.metric("Alertas Lubrificação", int(com_alerta_lub))
+        col3.metric("Alertas Revisão", int(com_alerta_rev))
+        col4.metric("Total com Alertas", int(qualquer_alerta))
+    
+        # Tabela: equipamentos com manutenção próxima ou vencida
+        df_due = mf[mf["Qualquer_Alerta"]].copy().sort_values(["Para_Revisao", "Para_Lubrificacao"], ascending=[True, True])
+    
+        st.subheader("⚠️ Equipamentos com Manutenção Próxima/Atrasada")
+        
+        if not df_due.empty:
+            # Organiza por tipo de alerta para exibição
+            lub_only = df_due[(df_due["Alert_Lubrificacao"]) & (~df_due["Alert_Revisao"])]
+            rev_only = df_due[(~df_due["Alert_Lubrificacao"]) & (df_due["Alert_Revisao"])]
+            both_alerts = df_due[(df_due["Alert_Lubrificacao"]) & (df_due["Alert_Revisao"])]
+    
+            if not both_alerts.empty:
+                st.markdown("##### 🔴 **Crítico: Lubrificação E Revisão**")
+                display_cols = ["Cod_Equip", "DESCRICAO_EQUIPAMENTO", "Hod_Hor_Atual", "Para_Lubrificacao", "Para_Revisao", "Unidade"]
+                st.dataframe(both_alerts[[c for c in display_cols if c in both_alerts.columns]].reset_index(drop=True), use_container_width=True)
+    
+            if not rev_only.empty:
+                st.markdown("##### 🟡 **Revisão Próxima**")
+                display_cols = ["Cod_Equip", "DESCRICAO_EQUIPAMENTO", "Hod_Hor_Atual", "Para_Revisao", "Unidade"]
+                st.dataframe(rev_only[[c for c in display_cols if c in rev_only.columns]].reset_index(drop=True), use_container_width=True)
+    
+            if not lub_only.empty:
+                st.markdown("##### 🔵 **Lubrificação Próxima**")
+                display_cols = ["Cod_Equip", "DESCRICAO_EQUIPAMENTO", "Hod_Hor_Atual", "Para_Lubrificacao", "Unidade"]
+                st.dataframe(lub_only[[c for c in display_cols if c in lub_only.columns]].reset_index(drop=True), use_container_width=True)
+    
+            # export CSV
+            all_display_cols = ["Cod_Equip", "DESCRICAO_EQUIPAMENTO", "Tipo_Controle", "Hod_Hor_Atual", "Para_Lubrificacao", "Para_Revisao", "Alert_Lubrificacao", "Alert_Revisao", "Unidade"]
+            csvm = df_due[[c for c in all_display_cols if c in df_due.columns]].to_csv(index=False).encode("utf-8")
+            st.download_button("⬇️ Exportar CSV - Equipamentos em alerta", csvm, "manutencao_alerta.csv", "text/csv")
+        else:
+            st.success("✅ Nenhum equipamento com alerta de manutenção dentro dos parâmetros configurados!")
+    
+        st.markdown("---")
+        st.subheader("✅ Registrar Manutenção Realizada")
+        
+        if not df_due.empty:
+            for _, row in df_due.iterrows():
+                cod = int(row["Cod_Equip"]) if not pd.isna(row["Cod_Equip"]) else None
+                label = f"{int(cod)} - {row.get('DESCRICAO_EQUIPAMENTO','')}" if cod else str(row.get('DESCRICAO_EQUIPAMENTO',''))
                 
-                tipo_controle = row.get("Tipo_Controle", "N/A")
-                valor_atual = row.get("Hod_Hor_Atual", np.nan)
-                unidade = row.get("Unidade", "")
-                
-                valor_display = valor_atual if pd.notna(valor_atual) else 0
-                
-                cols[0].markdown(f"**Tipo:** {tipo_controle}")
-                cols[1].markdown(f"**Atual:** {valor_display:.0f} {unidade}")
-                
-                servico_options = []
-                if row.get("Alert_Lubrificacao", False): servico_options.append("Lubrificação")
-                if row.get("Alert_Revisao", False): servico_options.append("Revisão")
-                
-                if servico_options:
-                    servico = st.selectbox(f"Tipo de serviço realizado", servico_options, key=f"servico_{cod}")
-                    observacao = st.text_input(f"Observações", key=f"obs_{cod}")
+                with st.expander(f"🔧 {label}"):
+                    cols = st.columns([2,1,1])
                     
-                    if st.button(f"✅ Registrar {servico}", key=f"reg_{cod}"):
-                        key = f"manut_done_{cod}_{servico}"
-                        if key not in st.session_state.get('manut_processed', set()):
-                            action = {
-                                "Data": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                "Cod_Equip": cod,
-                                "DESCRICAO_EQUIPAMENTO": row.get("DESCRICAO_EQUIPAMENTO", ""),
-                                "Tipo_Servico": servico,
-                                "Valor_Atual": float(valor_atual) if pd.notna(valor_atual) else np.nan,
-                                "Tipo_Controle": tipo_controle,
-                                "Observacao": observacao,
-                                "Usuario": "usuario_app"
-                            }
-                            try:
-                                append_manut_log_new(EXCEL_PATH, action)
-                                st.success(f"✅ {servico} registrada para equipamento {cod}!")
-                                st.session_state.setdefault('manut_processed', set()).add(key)
-                                # --- LINHA ADICIONADA PARA ATUALIZAÇÃO AUTOMÁTICA ---
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"❌ Falha ao registrar manutenção: {e}")
-                        else:
-                            st.warning("Já registrado nesta sessão.")
-    else:
-        st.info("Nenhum equipamento em alerta para registrar manutenção.")
-
-    st.markdown("---")
-    st.subheader("📊 Visão Geral da Frota (Plano de Manutenção)")
+                    tipo_controle = row.get("Tipo_Controle", "N/A")
+                    valor_atual = row.get("Hod_Hor_Atual", np.nan)
+                    unidade = row.get("Unidade", "")
+                    
+                    valor_display = valor_atual if pd.notna(valor_atual) else 0
+                    
+                    cols[0].markdown(f"**Tipo:** {tipo_controle}")
+                    cols[1].markdown(f"**Atual:** {valor_display:.0f} {unidade}")
+                    
+                    servico_options = []
+                    if row.get("Alert_Lubrificacao", False): servico_options.append("Lubrificação")
+                    if row.get("Alert_Revisao", False): servico_options.append("Revisão")
+                    
+                    if servico_options:
+                        servico = st.selectbox(f"Tipo de serviço realizado", servico_options, key=f"servico_{cod}")
+                        observacao = st.text_input(f"Observações", key=f"obs_{cod}")
+                        
+                        if st.button(f"✅ Registrar {servico}", key=f"reg_{cod}"):
+                            key = f"manut_done_{cod}_{servico}"
+                            if key not in st.session_state.get('manut_processed', set()):
+                                action = {
+                                    "Data": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                    "Cod_Equip": cod,
+                                    "DESCRICAO_EQUIPAMENTO": row.get("DESCRICAO_EQUIPAMENTO", ""),
+                                    "Tipo_Servico": servico,
+                                    "Valor_Atual": float(valor_atual) if pd.notna(valor_atual) else np.nan,
+                                    "Tipo_Controle": tipo_controle,
+                                    "Observacao": observacao,
+                                    "Usuario": "usuario_app"
+                                }
+                                try:
+                                    append_manut_log_new(EXCEL_PATH, action)
+                                    st.success(f"✅ {servico} registrada para equipamento {cod}!")
+                                    st.session_state.setdefault('manut_processed', set()).add(key)
+                                    # --- LINHA ADICIONADA PARA ATUALIZAÇÃO AUTOMÁTICA ---
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"❌ Falha ao registrar manutenção: {e}")
+                            else:
+                                st.warning("Já registrado nesta sessão.")
+        else:
+            st.info("Nenhum equipamento em alerta para registrar manutenção.")
     
-    mf_sorted = mf.sort_values(["Qualquer_Alerta", "Para_Revisao"], ascending=[False, True])
-    
-    overview_cols = ["Cod_Equip", "DESCRICAO_EQUIPAMENTO", "Tipo_Controle", "Hod_Hor_Atual", "Prox_Lubrificacao", "Para_Lubrificacao", "Prox_Revisao", "Para_Revisao", "Unidade"]
-    mf_display = mf_sorted[[c for c in overview_cols if c in mf_sorted.columns]].dropna(subset=['Hod_Hor_Atual'])
-    
-    st.dataframe(mf_display.reset_index(drop=True), use_container_width=True)
-    
-    csv_over = mf_display.to_csv(index=False).encode("utf-8")
-    st.download_button("⬇️ Exportar CSV - Plano de Manutenção Completo", csv_over, "manutencao_completa.csv", "text/csv")
+        st.markdown("---")
+        st.subheader("📊 Visão Geral da Frota (Plano de Manutenção)")
+        
+        mf_sorted = mf.sort_values(["Qualquer_Alerta", "Para_Revisao"], ascending=[False, True])
+        
+        overview_cols = ["Cod_Equip", "DESCRICAO_EQUIPAMENTO", "Tipo_Controle", "Hod_Hor_Atual", "Prox_Lubrificacao", "Para_Lubrificacao", "Prox_Revisao", "Para_Revisao", "Unidade"]
+        mf_display = mf_sorted[[c for c in overview_cols if c in mf_sorted.columns]].dropna(subset=['Hod_Hor_Atual'])
+        
+        st.dataframe(mf_display.reset_index(drop=True), use_container_width=True)
+        
+        csv_over = mf_display.to_csv(index=False).encode("utf-8")
+        st.download_button("⬇️ Exportar CSV - Plano de Manutenção Completo", csv_over, "manutencao_completa.csv", "text/csv")
