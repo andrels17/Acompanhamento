@@ -700,10 +700,12 @@ def main():
                 total_ult_safra = None
                 media_ult_safra = None
 
-            c6, c7, c8 = st.columns(3)
-            c6.metric("KM/Hr Último Registro", km_hs_display)
-            c7.metric(f"Total Última Safra{f' ({safra_ult})' if safra_ult else ''}", formatar_brasileiro(total_ult_safra) if total_ult_safra is not None else "–")
-            c8.metric("Média Última Safra", formatar_brasileiro(media_ult_safra) if media_ult_safra is not None else "–")
+            c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Status", dados_eq.get("ATIVO", "–"))
+                c2.metric("Placa", dados_eq.get("PLACA", "–"))
+                c3.metric("Tipo de Controle", tipo_controle)
+                c4.metric("Leitura Atual (Hod./Hor.)", valor_atual_display)
+
 
             st.markdown("---")
             st.subheader("Informações Cadastrais")
