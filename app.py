@@ -221,11 +221,16 @@ def apply_modern_css(dark: bool):
     )
 
 # ---------------- NOVA Manutenção: lógica atualizada ----------------
-def get_current_value_from_bd(df_abast: pd.DataFrame) -> pd.Series:
-    """Pega o valor atual (mais recente) da coluna Hod_Hor_Atual por equipamento."""
-    # Agrupa por equipamento e pega o último valor de Hod_Hor_Atual
+def get_current_value_from_bd(df_abast: pd.DataFrame) -> pd.DataFrame:
+    """Pega o valor atual (mais recente e não nulo) da coluna Hod_Hor_Atual por equipamento."""
+    
+    # --- CORREÇÃO APLICADA AQUI ---
+    # 1. Primeiro, remove todas as linhas onde o "Hod_Hor_Atual" está vazio.
+    df_validos = df_abast.dropna(subset=['Hod_Hor_Atual'])
+    
+    # 2. Agora, com apenas os dados válidos, pega o último registro de cada equipamento.
     current_values = (
-        df_abast
+        df_validos
         .sort_values(["Cod_Equip", "Data"])
         .groupby("Cod_Equip")
         .agg({
