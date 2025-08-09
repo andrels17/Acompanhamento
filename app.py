@@ -93,75 +93,50 @@ def detect_equipment_type(df_abast: pd.DataFrame) -> pd.DataFrame:
 # Leitura segura do Excel (usa pandas). Cache para performance
 @st.cache_data(show_spinner="Carregando e processando dados...")
 def load_data(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Carrega e prepara DataFrames (Abastecimento e Frotas)."""
+    """Carrega e prepara os DataFrames."""
     try:
         df_abast = pd.read_excel(path, sheet_name="BD", skiprows=2)
         df_frotas = pd.read_excel(path, sheet_name="FROTAS", skiprows=1)
     except FileNotFoundError:
-        st.error(f"Arquivo não encontrado em `{path}`")
+        st.error(f"Arquivo '{path}' não encontrado. Certifique-se de que ele foi enviado para o repositório do GitHub.")
         st.stop()
-    except ValueError as e:
-        if "Sheet name" in str(e):
-            st.error("Verifique se as planilhas 'BD' e 'FROTAS' existem no arquivo.")
-            st.stop()
-        else:
-            raise
+    except Exception as e:
+        st.error(f"Erro ao carregar o Excel: {e}")
+        st.stop()
 
-    # Normaliza frotas
     df_frotas = df_frotas.rename(columns={"COD_EQUIPAMENTO": "Cod_Equip"}).drop_duplicates(subset=["Cod_Equip"])
-    df_frotas["ANOMODELO"] = pd.to_numeric(df_frotas.get("ANOMODELO", pd.Series()), errors="coerce")
-    df_frotas["label"] = (
-        df_frotas["Cod_Equip"].astype(str)
-        + " - "
-        + df_frotas.get("DESCRICAO_EQUIPAMENTO", "").fillna("")
-        + " ("
-        + df_frotas.get("PLACA", "").fillna("Sem Placa")
-        + ")"
-    )
-
-    # --- CORREÇÃO APLICADA AQUI ---
-    # A lista de nomes agora tem 21 colunas, exatamente como na sua planilha.
-    # A coluna "Classe_Original" foi removida.
-    df_abast.columns = [
-        "Data", "Cod_Equip", "Descricao_Equip", "Qtde_Litros", "Km_Hs_Rod",
-        "Media", "Media_P", "Perc_Media", "Ton_Cana", "Litros_Ton",
-        "Ref1", "Ref2", "Unidade", "Safra", "Mes", "Semana",
-        "Classe_Operacional", "Descricao_Proprietario_Original",
-        "Potencia_CV_Abast", "Hod_Hor_Atual", "Unid"
+    df_frotas["ANOMODELO"] = pd.to_numeric(df_frotas.get("ANOMODELO"), errors="coerce")
+    df_frotas["label"] = df_frotas["Cod_Equip"].astype(str) + " - " + df_frotas.get("DESCRICAO_EQUIPAMENTO", "").fillna("") + " (" + df_frotas.get("PLACA", "").fillna("Sem Placa") + ")"
+    
+    expected_cols = [
+        "Data", "Cod_Equip", "Descricao_Equip", "Qtde_Litros", "Km_Hs_Rod", "Media", "Media_P", 
+        "Perc_Media", "Ton_Cana", "Litros_Ton", "Ref1", "Ref2", "Unidade", "Safra", "Mes", "Semana",
+        "Classe_Operacional", "Descricao_Proprietario_Original", "Potencia_CV_Abast", "Hod_Hor_Atual", "Unid"
     ]
+    
+    if len(df_abast.columns) < len(expected_cols):
+        st.error(f"A planilha 'BD' tem menos colunas ({len(df_abast.columns)}) do que o esperado ({len(expected_cols)}). Verifique o arquivo Excel.")
+        st.stop()
 
-    # APLICA A DETECÇÃO DE TIPO DE EQUIPAMENTO
+    df_abast = df_abast.iloc[:, :len(expected_cols)]
+    df_abast.columns = expected_cols
+
     df_abast = detect_equipment_type(df_abast)
-
     df = pd.merge(df_abast, df_frotas, on="Cod_Equip", how="left")
     df["Data"] = pd.to_datetime(df["Data"], errors="coerce")
     df.dropna(subset=["Data"], inplace=True)
 
-    # Campos de tempo/derivados
-    df["Mes"] = df["Data"].dt.month
-    df["Semana"] = df["Data"].dt.isocalendar().week
     df["Ano"] = df["Data"].dt.year
-    df["AnoMes"] = df["Data"].dt.to_period("M").astype(str)
-    df["AnoSemana"] = df["Data"].dt.strftime("%Y-%U")
-
-# --- CORREÇÃO PARA LER NÚMEROS COM VÍRGULA ---
+    
+    # --- CORREÇÃO PARA LER NÚMEROS COM VÍRGULA E PONTO ---
     for col in ["Qtde_Litros", "Media", "Km_Hs_Rod", "Hod_Hor_Atual"]:
         if col in df.columns:
-            # 1. Remove o '.' dos milhares
-            # 2. Troca a ',' do decimal por um '.'
+            # Converte para string, remove o ponto de milhar, e troca a vírgula do decimal por ponto
             df[col] = df[col].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False)
             df[col] = pd.to_numeric(df[col], errors='coerce')
-
-    # Marca / Fazenda (mantém coluna, mas não será usada em filtros)
-    df["DESCRICAOMARCA"] = df["Ref2"].astype(str)
-    df["Fazenda"] = df["Ref1"].astype(str)
-
-    # Cálculo seguro de Consumo km/l (fallback)
+    
     if "Km_Hs_Rod" in df.columns and "Qtde_Litros" in df.columns:
-        df["Consumo_km_l"] = np.where(df["Qtde_Litros"] > 0, df["Km_Hs_Rod"] / df["Qtde_Litros"], np.nan)
-        df["Media"] = df["Consumo_km_l"]
-    else:
-        df["Consumo_km_l"] = np.nan
+        df["Media"] = np.where(df["Qtde_Litros"] > 0, df["Km_Hs_Rod"] / df["Qtde_Litros"], np.nan)
 
     return df, df_frotas
 @st.cache_data
