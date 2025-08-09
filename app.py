@@ -679,13 +679,7 @@ def main():
                 tipo_controle = "N/A"
                 valor_atual_display = "–"
             
-            col1, col2, col3, col4, col5 = st.columns(5)
-            col1.metric("Status", dados_eq.get("ATIVO", "–"))
-            col2.metric("Placa", dados_eq.get("PLACA", "–"))
-            col3.metric("Tipo Controle", tipo_controle)
-            col4.metric("Valor Atual", valor_atual_display)
-            col5.metric("Média Geral", formatar_brasileiro(consumo_eq["Media"].mean()))
-
+           
             if not consumo_eq.empty:
                 ultimo = consumo_eq.iloc[0]
                 km_hs = ultimo.get("Km_Hs_Rod", np.nan)
