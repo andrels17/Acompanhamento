@@ -119,13 +119,15 @@ def load_data(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
         + ")"
     )
 
-    # Normaliza abastecimento (mantendo nomes originais)
+    # --- CORREÇÃO APLICADA AQUI ---
+    # A lista de nomes agora tem 21 colunas, exatamente como na sua planilha.
+    # A coluna "Classe_Original" foi removida.
     df_abast.columns = [
         "Data", "Cod_Equip", "Descricao_Equip", "Qtde_Litros", "Km_Hs_Rod",
         "Media", "Media_P", "Perc_Media", "Ton_Cana", "Litros_Ton",
-        "Ref1", "Ref2", "Unidade", "Safra", "Mes_Excel", "Semana_Excel",
-        "Classe_Original", "Classe_Operacional", "Descricao_Proprietario_Original",
-        "Potencia_CV_Abast", "Hod_Hor_Atual", "Unid"  # ADICIONADAS as colunas Hod_Hor_Atual e Unid
+        "Ref1", "Ref2", "Unidade", "Safra", "Mes", "Semana",
+        "Classe_Operacional", "Descricao_Proprietario_Original",
+        "Potencia_CV_Abast", "Hod_Hor_Atual", "Unid"
     ]
 
     # APLICA A DETECÇÃO DE TIPO DE EQUIPAMENTO
@@ -159,7 +161,6 @@ def load_data(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
         df["Consumo_km_l"] = np.nan
 
     return df, df_frotas
-
 @st.cache_data
 def filtrar_dados(df: pd.DataFrame, opts: dict) -> pd.DataFrame:
     """Filtra o DataFrame conforme opções selecionadas (sem filtro de marca)."""
