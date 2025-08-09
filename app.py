@@ -89,7 +89,6 @@ def detect_equipment_type(df_abast: pd.DataFrame) -> pd.DataFrame:
     
     return df
 
-# Leitura segura do Excel (usa pandas). Cache para performance
 @st.cache_data(show_spinner="Carregando e processando dados...")
 def load_data(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Carrega e prepara DataFrames (Abastecimento e Frotas)."""
@@ -118,12 +117,14 @@ def load_data(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
         + ")"
     )
 
-    # Normaliza abastecimento (mantendo nomes originais)
+    # --- CORREÇÃO APLICADA AQUI ---
+    # A lista de nomes agora tem 21 colunas, exatamente como na sua planilha.
+    # A coluna "Classe_Original" foi removida.
     df_abast.columns = [
         "Data", "Cod_Equip", "Descricao_Equip", "Qtde_Litros", "Km_Hs_Rod",
         "Media", "Media_P", "Perc_Media", "Ton_Cana", "Litros_Ton",
-        "Ref1", "Ref2", "Unidade", "Safra", "Mes_Excel", "Semana_Excel",
-        "Classe_Original", "Classe_Operacional", "Descricao_Proprietario_Original",
+        "Ref1", "Ref2", "Unidade", "Safra", "Mes", "Semana",
+        "Classe_Operacional", "Descricao_Proprietario_Original",
         "Potencia_CV_Abast", "Hod_Hor_Atual", "Unid"
     ]
 
@@ -146,11 +147,11 @@ def load_data(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # Marca / Fazenda
+    # Marca / Fazenda (mantém coluna, mas não será usada em filtros)
     df["DESCRICAOMARCA"] = df["Ref2"].astype(str)
     df["Fazenda"] = df["Ref1"].astype(str)
 
-    # Cálculo seguro de Consumo km/l
+    # Cálculo seguro de Consumo km/l (fallback)
     if "Km_Hs_Rod" in df.columns and "Qtde_Litros" in df.columns:
         df["Consumo_km_l"] = np.where(df["Qtde_Litros"] > 0, df["Km_Hs_Rod"] / df["Qtde_Litros"], np.nan)
         df["Media"] = df["Consumo_km_l"]
