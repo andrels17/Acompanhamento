@@ -655,57 +655,66 @@ def main():
                                      textposition="top right", marker=dict(size=8, color="#000000"), showlegend=False)
             st.plotly_chart(fig_acum, use_container_width=True, theme=None)
 
-    # ----- Aba Consulta de Frota -----
-    with tab_consulta:
-        st.header("🔎 Ficha Individual do Equipamento")
-        equip_label = st.selectbox("Selecione o Equipamento", options=df_frotas.sort_values("Cod_Equip")["label"])
-        if equip_label:
-            cod_sel = int(equip_label.split(" - ")[0])
-            dados_eq = df_frotas.query("Cod_Equip == @cod_sel").iloc[0]
-            consumo_eq = df.query("Cod_Equip == @cod_sel").sort_values("Data", ascending=False)
+    # ----- Aba Consulta de Frota (VERSÃO CORRIGIDA)-----
+with tab_consulta:
+    st.header("🔎 Ficha Individual do Equipamento")
+    equip_label = st.selectbox("Selecione o Equipamento", options=df_frotas.sort_values("Cod_Equip")["label"])
+    if equip_label:
+        cod_sel = int(equip_label.split(" - ")[0])
+        dados_eq = df_frotas.query("Cod_Equip == @cod_sel").iloc[0]
+        consumo_eq = df.query("Cod_Equip == @cod_sel").sort_values("Data", ascending=False)
 
-            st.subheader(f"{dados_eq.get('DESCRICAO_EQUIPAMENTO','–')} ({dados_eq.get('PLACA','–')})")
+        st.subheader(f"{dados_eq.get('DESCRICAO_EQUIPAMENTO','–')} ({dados_eq.get('PLACA','–')})")
+        
+        # Pega as informações mais recentes do equipamento
+        if not consumo_eq.empty:
+            ultimo_registro = consumo_eq.iloc[0]
+            tipo_controle = ultimo_registro.get("Tipo_Controle", "N/A")
             
-            # NOVO: Mostra tipo de controle
-            if not consumo_eq.empty:
-                tipo_controle = consumo_eq.iloc[0].get("Tipo_Controle", "N/A")
-                valor_atual = consumo_eq.iloc[0].get("Hod_Hor_Atual", np.nan)
-                unidade = "h" if tipo_controle == "HORAS" else "km"
-                valor_atual_display = f"{int(valor_atual)} {unidade}" if pd.notna(valor_atual) else "–"
-            else:
-                tipo_controle = "N/A"
-                valor_atual_display = "–"
+            # --- CORREÇÃO APLICADA AQUI ---
+            # Busca o valor correto da coluna "Hod_Hor_Atual"
+            valor_atual_leitura = ultimo_registro.get("Hod_Hor_Atual", np.nan) 
             
-            col1, col2, col3, col4, col5 = st.columns(5)
-            col1.metric("Status", dados_eq.get("ATIVO", "–"))
-            col2.metric("Placa", dados_eq.get("PLACA", "–"))
-            col3.metric("Tipo Controle", tipo_controle)
-            col4.metric("Valor Atual", valor_atual_display)
-            col5.metric("Média Geral", formatar_brasileiro(consumo_eq["Media"].mean()))
+            unidade = "h" if tipo_controle == "HORAS" else "km"
+            valor_atual_display = f"{int(valor_atual_leitura):,} {unidade}".replace(",",".") if pd.notna(valor_atual_leitura) else "–"
+            
+            # Dados para os outros cards
+            media_geral_eq = consumo_eq["Media"].mean()
+            total_consumido_eq = consumo_eq["Qtde_Litros"].sum()
 
-            if not consumo_eq.empty:
-                ultimo = consumo_eq.iloc[0]
-                km_hs = ultimo.get("Km_Hs_Rod", np.nan)
-                km_hs_display = str(int(km_hs)) if pd.notna(km_hs) else "–"
-                safra_ult = consumo_eq["Safra"].max()
-                df_safra = consumo_eq[consumo_eq["Safra"] == safra_ult]
-                total_ult_safra = df_safra["Qtde_Litros"].sum()
-                media_ult_safra = df_safra["Media"].mean()
-            else:
-                km_hs_display = "–"
-                safra_ult = None
-                total_ult_safra = None
-                media_ult_safra = None
+            safra_ult = consumo_eq["Safra"].max()
+            df_safra = consumo_eq[consumo_eq["Safra"] == safra_ult]
+            total_ult_safra = df_safra["Qtde_Litros"].sum()
+            media_ult_safra = df_safra["Media"].mean()
+        else:
+            # Valores padrão caso não haja histórico de consumo
+            tipo_controle = "N/A"
+            valor_atual_display = "–"
+            media_geral_eq = 0
+            total_consumido_eq = 0
+            safra_ult = None
+            total_ult_safra = 0
+            media_ult_safra = 0
 
-            c6, c7, c8 = st.columns(3)
-            c6.metric("KM/Hr Último Registro", km_hs_display)
-            c7.metric(f"Total Última Safra{f' ({safra_ult})' if safra_ult else ''}", formatar_brasileiro(total_ult_safra) if total_ult_safra is not None else "–")
-            c8.metric("Média Última Safra", formatar_brasileiro(media_ult_safra) if media_ult_safra is not None else "–")
+        # Exibição dos KPIs em cards
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Status", dados_eq.get("ATIVO", "–"))
+        col2.metric("Placa", dados_eq.get("PLACA", "–"))
+        col3.metric("Média Geral", f"{media_geral_eq:,.2f}".replace(",","X").replace(".",",").replace("X","."))
+        col4.metric("Total Consumido (L)", f"{total_consumido_eq:,.2f}".replace(",","X").replace(".",",").replace("X","."))
 
-            st.markdown("---")
-            st.subheader("Informações Cadastrais")
-            st.dataframe(dados_eq.drop("label").to_frame("Valor"), use_container_width=True)
+        st.markdown("---") # Linha divisória
 
+        c5, c6, c7, c8 = st.columns(4)
+        # --- RÓTULO E VALOR CORRIGIDOS ---
+        c5.metric("Tipo de Controle", tipo_controle)
+        c6.metric("Leitura Atual (Hod./Hor.)", valor_atual_display)
+        c7.metric(f"Total Última Safra{f' ({safra_ult})' if safra_ult else ''}", f"{total_ult_safra:,.2f}".replace(",","X").replace(".",",").replace("X","."))
+        c8.metric("Média Última Safra", f"{media_ult_safra:,.2f}".replace(",","X").replace(".",",").replace("X","."))
+
+        st.markdown("---")
+        st.subheader("Informações Cadastrais")
+        st.dataframe(dados_eq.drop("label").to_frame("Valor"), use_container_width=True)
     # ----- Aba Tabela Detalhada -----
     with tab_tabela:
         st.header("📋 Tabela Detalhada de Abastecimentos")
